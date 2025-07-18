@@ -4,11 +4,11 @@ Main entry point for the Wordle Solver program.
 Prompts user to choose a mode and executes the solver.
 """
 
-from loader import load_word_list
-from interface import get_opener_guesses, select_game_mode
-from modes.multi_solver import play_multi_solver
-from modes.sequence_solver import play_sequence_solver
-from test_suite import test_solver_on_all_words
+from wordle_solver.loader import load_word_list
+from wordle_solver.interface import get_opener_guesses, select_game_mode
+from wordle_solver.modes.multi_solver import play_multi_solver
+from wordle_solver.test_suite import test_solver_on_all_words
+from wordle_solver.modes.sequence_solver import play_sequence_solver
 
 def get_number_of_words():
     """Prompt the user for how many words to solve and validate input."""
