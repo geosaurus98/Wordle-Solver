@@ -32,9 +32,9 @@ def get_opener_guesses():
             if openers_num < 1:
                 raise ValueError
 
-            # Choose predefined opener sets
             if 1 <= openers_num <= len(DEFAULT_OPENERS):
-                opener_guesses = DEFAULT_OPENERS[openers_num - 1]
+                opener_guesses = list(DEFAULT_OPENERS[openers_num - 1])  # copy
+
 
             # Rescue Mode allows user-defined opener words
             elif openers_num == 4:
