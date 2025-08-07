@@ -7,65 +7,73 @@ from wordle_solver.constants import WORD_LENGTH
 from wordle_solver.helpers import normalize_feedback
 
 def filter_words_for_word(words, guess, feedback):
-    """
-    Filters a list of words to those matching the given feedback for a guess.
-
-    Args:
-        words (list[str]): Candidate words.
-        guess (str): The guessed word.
-        feedback (str): Feedback in 'g', 'y', 'b' format.
-
-    Returns:
-        list[str]: Filtered list of valid words.
-    """
-
-    feedback = normalize_feedback(feedback)  # Standardize feedback to 'g', 'y', 'b'
+    feedback = normalize_feedback(feedback)
     new_words = []
 
     for word in words:
         match = True
-        used = [False] * WORD_LENGTH  # Tracks matched letters in the candidate word
+        used = [False] * WORD_LENGTH
 
-        # First pass: handle green matches
+        # 1) Greens: lock positions
         for i in range(WORD_LENGTH):
-            if feedback[i] == 'g':  # Green: correct letter in correct position
+            if feedback[i] == 'g':
                 if word[i] != guess[i]:
                     match = False
                     break
-                used[i] = True  # Mark this position as used
-
+                used[i] = True
         if not match:
-            continue  # Skip to next candidate word
+            continue
 
-        # Second pass: handle yellow matches
+        # 2) Yellows: explicitly ban the letter in that spot
         for i in range(WORD_LENGTH):
-            if feedback[i] == 'y':  # Yellow: correct letter in wrong position
+            if feedback[i] == 'y':
+                if word[i] == guess[i]:   # <--- key line
+                    match = False
+                    break
+        if not match:
+            continue
+
+        # 3) Yellows: ensure the letter exists elsewhere (respecting used slots)
+        for i in range(WORD_LENGTH):
+            if feedback[i] == 'y':
                 found = False
                 for j in range(WORD_LENGTH):
-                    if not used[j] and word[j] == guess[i] and j != i:
-                        used[j] = True  # Mark as used
+                    if j != i and not used[j] and word[j] == guess[i]:
+                        used[j] = True
                         found = True
                         break
                 if not found:
                     match = False
                     break
-
         if not match:
-            continue  # Skip to next candidate word
+            continue
 
-        # Third pass: handle black/gray letters
-        for i in range(WORD_LENGTH):
-            if feedback[i] == 'b':  # Black/gray: letter should not be present
-                # Count how many times this letter is allowed based on g/y feedback
-                allowed = sum(
-                    1 for k in range(WORD_LENGTH)
-                    if guess[k] == guess[i] and feedback[k] in ('g', 'y')
-                )
-                if word.count(guess[i]) > allowed:
+        # 4) Correct per-letter count constraints
+        for ch in set(guess):
+            idxs = [i for i in range(WORD_LENGTH) if guess[i] == ch]
+            colored = sum(feedback[i] in ('g', 'y') for i in idxs)
+            blacks  = sum(feedback[i] == 'b' for i in idxs)
+
+            if colored == 0:
+                # All occurrences of ch in this guess were black -> ch absent
+                if ch in word:
+                    match = False
+                    break
+            elif blacks > 0:
+                # Mix of colored and black in this guess -> exact count == colored
+                if word.count(ch) != colored:
+                    match = False
+                    break
+            else:
+                # Only colored (no blacks) -> lower bound only
+                if word.count(ch) < colored:
                     match = False
                     break
 
-        if match:
-            new_words.append(word)  # Word passed all checks
+        if not match:
+            continue
+
+        new_words.append(word)
+
 
     return new_words
