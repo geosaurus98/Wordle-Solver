@@ -1,0 +1,14 @@
+{"date": "2021-06-19", "status": "error", "detail": "NYT archive puzzles appear gated behind login/subscription. Run headful with a persistent profile, log in, then re-run. Example: py -m sedecordle_bot.nyt_wordle_bot --headful --user-data-dir .\\nyt_wordle_profile --date YYYY-MM-DD"}
+{"date": "2021-06-20", "status": "error", "detail": "Could not find Wordle tiles on the page. Last error: Locator.count: Target page, context or browser has been closed"}
+{"date": "2021-06-21", "status": "error", "detail": "Page.goto: Target page, context or browser has been closed"}
+{"date": "2021-06-22", "status": "error", "detail": "Page.goto: Target page, context or browser has been closed"}
+{"date": "2021-06-23", "status": "error", "detail": "Page.goto: Target page, context or browser has been closed"}
+{"date": "2021-06-24", "status": "error", "detail": "Page.goto: Target page, context or browser has been closed"}
+{"date": "2021-06-25", "status": "error", "detail": "Page.goto: Target page, context or browser has been closed"}
+{"date": "2021-06-19", "status": "error", "detail": "Could not find Wordle tiles on the page. Last error: Locator.count: Target page, context or browser has been closed"}
+{"date": "2021-06-20", "status": "error", "detail": "Page.goto: Target page, context or browser has been closed"}
+{"date": "2021-06-21", "status": "error", "detail": "Page.goto: Target page, context or browser has been closed"}
+{"date": "2021-06-22", "status": "error", "detail": "Page.goto: Target page, context or browser has been closed"}
+{"date": "2021-06-23", "status": "error", "detail": "Page.goto: Target page, context or browser has been closed"}
+{"date": "2021-06-24", "status": "error", "detail": "Page.goto: Target page, context or browser has been closed"}
+{"date": "2021-06-25", "status": "error", "detail": "Page.goto: Target page, context or browser has been closed"}

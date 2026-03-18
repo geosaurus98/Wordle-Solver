@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+ENV/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Playwright artifacts
+playwright-report/
+test-results/
+
+# Browser profiles (may contain cookies/sessions)
+sedecordle_profile/
+nyt_wordle_profile/
+nyt_archive_profile/
+sedecordle_bot/data/chrome_profile_clone/
+
+# Generated data / debug artifacts
+sedecordle_bot/data/*.png
+sedecordle_bot/data/*report*.json
+sedecordle_bot/data/*_report.json
+sedecordle_bot/data/*.json
+sedecordle_bot/data/*allowed*.txt
+sedecordle_bot/data/*answers*.txt
+
