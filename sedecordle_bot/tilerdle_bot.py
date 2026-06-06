@@ -83,14 +83,33 @@ def _extract_words(tiles: list[dict]) -> dict[str, list[str]]:
 
 
 def run_bot() -> GameResult:
-    date_str = str(datetime.date.today())
-    api_url = _API.format(date=date_str)
-    try:
-        r = requests.get(api_url, timeout=10, verify=False)
-        r.raise_for_status()
-        data = r.json()
-    except Exception as exc:
-        return GameResult(game="Tilerdle", url=URL, date=date_str, error=str(exc))
+    today = datetime.date.today()
+    # Try today first, then fall back up to 2 days if the puzzle isn't published yet.
+    data = None
+    puzzle_date = None
+    last_exc: Exception | None = None
+    for delta in range(3):
+        candidate = today - datetime.timedelta(days=delta)
+        date_str = str(candidate)
+        try:
+            r = requests.get(_API.format(date=date_str), timeout=10, verify=False)
+            if r.status_code == 404:
+                continue
+            r.raise_for_status()
+            data = r.json()
+            puzzle_date = candidate
+            break
+        except Exception as exc:
+            last_exc = exc
+
+    if data is None:
+        date_str = str(today)
+        return GameResult(
+            game="Tilerdle", url=URL, date=date_str,
+            error=str(last_exc) if last_exc else "Puzzle not yet available",
+        )
+
+    date_str = str(puzzle_date)
 
     try:
         theme = data.get("theme", "?")
