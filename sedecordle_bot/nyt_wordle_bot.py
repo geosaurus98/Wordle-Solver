@@ -216,8 +216,9 @@ async def run_bot(
     channel: str | None,
     profile_directory: str | None,
     dry_run: bool,
-    first_guess: str,
-) -> None:
+    opening_guesses: tuple[str, ...] | list[str] = ("arose", "linty", "chump"),
+    result: dict | None = None,
+) -> dict | None:
     allowed, answers = _ensure_nyt_lists()
     if not allowed or not answers:
         raise RuntimeError("No word lists available.")
@@ -247,8 +248,8 @@ async def run_bot(
 
         candidates = list(answers)
         guessed: set[str] = set()
-
-        first_guess_l = (first_guess or "").strip().lower()
+        _guesses_log: list[dict] = []
+        _answer: str | None = None
 
         for turn in range(6):
             await _dismiss_overlays(page)
@@ -256,10 +257,16 @@ async def run_bot(
             if row_idx >= 6:
                 break
 
-            if turn == 0 and first_guess_l and first_guess_l in allowed and first_guess_l not in guessed:
-                guess = first_guess_l
-            else:
-                guess = choose_best_guess_single_board(allowed, candidates, guessed=guessed)
+            # Play opening guesses in order, then fall through to adaptive solver.
+            opening_guess = None
+            for og in opening_guesses:
+                if og in guessed:
+                    continue
+                if og in allowed:
+                    opening_guess = og
+                break  # stop at first unplayed opening
+
+            guess = opening_guess or choose_best_guess_single_board(allowed, candidates, guessed=guessed)
             if guess in guessed:
                 guess = next(w for w in allowed if w not in guessed)
 
@@ -274,17 +281,31 @@ async def run_bot(
                 await clear_current_guess(page, 5)
                 continue
 
+            before = len(candidates)
             guessed.add(guess)
             allowed = [w for w in allowed if w != guess]
             candidates2 = filter_candidates(candidates, guess, fb)
             if candidates2:
                 candidates = candidates2
 
+            _guesses_log.append({
+                "word": guess,
+                "feedback": list(fb),
+                "candidates_before": before,
+                "candidates_after": len(candidates),
+            })
+
             if is_solved_feedback(fb):
+                _answer = guess
                 print("Solved.")
                 break
 
+        if result is not None:
+            result["guesses"] = _guesses_log
+            result["answer"] = _answer
+            result["solved"] = _answer is not None
         await context.close()
+        return result
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -299,7 +320,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help='Chrome profile directory name (e.g. "Default", "Profile 1"). Used with --user-data-dir.',
     )
-    ap.add_argument("--first-guess", type=str, default="AROSE", help="First guess to play (default: AROSE).")
+    ap.add_argument("--opening-guesses", type=str, default="arose,linty,chump",
+                    help="Comma-separated opening guess sequence (default: arose,linty,chump)")
     ap.add_argument("--dry-run", action="store_true", help="Only detect tiles, then exit.")
     ap.add_argument(
         "--user-data-dir",
@@ -321,7 +343,7 @@ def main(argv: list[str] | None = None) -> None:
             channel=(args.channel.strip() if args.channel else None),
             profile_directory=args.profile_directory,
             dry_run=args.dry_run,
-            first_guess=args.first_guess,
+            opening_guesses=tuple(g.strip().lower() for g in args.opening_guesses.split(",")),
         )
     )
 

@@ -309,7 +309,9 @@ async def run_bot(
     url: str,
     dry_run: bool,
     user_data_dir: str | None,
-) -> None:
+    opening_guesses: tuple[str, ...] | list[str] = ("arose", "linty", "chump"),
+    result: dict | None = None,
+) -> dict | None:
     _ensure_word_lists_exist()
     allowed, answers = load_words()
     if not allowed or not answers:
@@ -341,6 +343,8 @@ async def run_bot(
         board_candidates: list[list[str]] = [list(answers) for _ in range(16)]
         solved = [False] * 16
         guessed: set[str] = set()
+        _board_answers: list[str | None] = [None] * 16
+        _board_guesses: list[list[dict]] = [[] for _ in range(16)]
 
         await bootstrap_from_existing_rows(page, detected, allowed, board_candidates, solved, guessed)
 
@@ -377,7 +381,15 @@ async def run_bot(
                 break
 
             if not guess:
-                guess = choose_next_guess(active_allowed, active_candidates)
+                # Play opening guesses in order, then fall through to adaptive solver.
+                opening_guess = None
+                for og in opening_guesses:
+                    if og in guessed:
+                        continue
+                    if og in active_allowed:
+                        opening_guess = og
+                    break  # stop at first unplayed opening
+                guess = opening_guess or choose_next_guess(active_allowed, active_candidates)
             if guess in guessed:
                 # Shouldn't happen, but avoid repeats defensively.
                 guess = next(w for w in active_allowed if w not in guessed)
@@ -409,6 +421,7 @@ async def run_bot(
                 await clear_current_guess(page, 5)
                 continue
 
+            before_counts = [len(c) for c in board_candidates]
             guessed.add(guess)
             allowed = [w for w in allowed if w != guess]
 
@@ -424,8 +437,15 @@ async def run_bot(
                 filtered = filter_candidates(board_candidates[bi], guess, fb)
                 if filtered:
                     board_candidates[bi] = filtered
+                _board_guesses[bi].append({
+                    "word": guess,
+                    "feedback": list(fb),
+                    "candidates_before": before_counts[bi],
+                    "candidates_after": len(board_candidates[bi]),
+                })
                 if is_solved_feedback(fb):
                     solved[bi] = True
+                    _board_answers[bi] = guess
 
             # Progress report
             remaining = [len(c) for c in board_candidates]
@@ -435,7 +455,12 @@ async def run_bot(
 
         print("Done.")
         print(f"Solved {sum(1 for x in solved if x)}/16.")
+        if result is not None:
+            result["board_answers"] = _board_answers
+            result["board_guesses"] = _board_guesses
+            result["solved_count"] = sum(1 for x in _board_answers if x is not None)
         await context.close()
+        return result
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

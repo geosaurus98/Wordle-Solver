@@ -250,7 +250,7 @@ async def run_bot(
     dry_run: bool,
     user_data_dir: str | None,
     max_turns: int,
-    first_guess: str,
+    opening_guesses: tuple[str, ...] | list[str] = ("arose", "linty", "chump"),
     result: dict | None = None,
 ) -> dict | None:
     _ensure_word_lists_exist()
@@ -299,8 +299,6 @@ async def run_bot(
         _board_answers: list[str | None] = [None] * 8
         _board_guesses: list[list[dict]] = [[] for _ in range(8)]
 
-        first_guess_l = (first_guess or "").strip().lower()
-
         while not all(solved):
             row_idx = await current_row_index(page, detected, 0)
             if row_idx >= max_turns:
@@ -319,11 +317,17 @@ async def run_bot(
             if not active_allowed:
                 raise RuntimeError("No allowed guesses left.")
 
-            if not guessed and first_guess_l and first_guess_l in active_allowed:
-                guess = first_guess_l
-            else:
-                active_candidates = [c if not solved[i] else [] for i, c in enumerate(board_candidates)]
-                guess = forced or choose_next_guess(active_allowed, active_candidates)
+            # Play opening guesses in order, then fall through to adaptive solver.
+            opening_guess = None
+            for og in opening_guesses:
+                if og in guessed:
+                    continue
+                if og in active_allowed:
+                    opening_guess = og
+                break  # stop at first unplayed opening
+
+            active_candidates = [c if not solved[i] else [] for i, c in enumerate(board_candidates)]
+            guess = opening_guess or forced or choose_next_guess(active_allowed, active_candidates)
             if guess in guessed:
                 guess = next(w for w in active_allowed if w not in guessed)
 
@@ -388,7 +392,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--url", type=str, default=URL, help="Game URL.")
     ap.add_argument("--dry-run", action="store_true", help="Only detect boards, then exit.")
     ap.add_argument("--max-turns", type=int, default=13, help="Max guesses to play (Octordle daily is 13).")
-    ap.add_argument("--first-guess", type=str, default="AROSE", help="First guess to play (default: AROSE).")
+    ap.add_argument("--opening-guesses", type=str, default="arose,linty,chump",
+                    help="Comma-separated opening guess sequence (default: arose,linty,chump)")
     ap.add_argument(
         "--user-data-dir",
         type=str,
@@ -408,7 +413,7 @@ def main(argv: list[str] | None = None) -> None:
             dry_run=args.dry_run,
             user_data_dir=args.user_data_dir,
             max_turns=args.max_turns,
-            first_guess=args.first_guess,
+            opening_guesses=tuple(g.strip().lower() for g in args.opening_guesses.split(",")),
         )
     )
 

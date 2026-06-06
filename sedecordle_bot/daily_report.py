@@ -13,7 +13,7 @@ Environment variables required:
 Optional:
     PUZZLE_EMAIL_TO      — Recipient (default: geosaurus98@gmail.com)
     PUZZLE_EMAIL_FROM    — Sender Gmail address (default: geosaurus98@gmail.com)
-    PUZZLE_FIRST_GUESS   — Opening guess for all Wordle-style games (default: arose)
+    PUZZLE_OPENING_GUESSES — Comma-separated opening guesses (default: arose,linty,chump)
 """
 
 import argparse
@@ -39,14 +39,14 @@ DATA_DIR = Path(__file__).resolve().parent / "data"
 NYT_API = "https://www.nytimes.com/svc/wordle/v2/{date}.json"
 DEFAULT_TO = "geosaurus98@gmail.com"
 DEFAULT_FROM = "geosaurus98@gmail.com"
-DEFAULT_FIRST_GUESS = "arose"
+DEFAULT_OPENING_GUESSES = ("arose", "linty", "chump")
 
 
 # ---------------------------------------------------------------------------
 # Wordle — uses NYT API and offline simulation (no browser)
 # ---------------------------------------------------------------------------
 
-def _run_wordle(date_str: str, first_guess: str) -> GameResult:
+def _run_wordle(date_str: str, opening_guesses: tuple[str, ...]) -> GameResult:
     url = "https://www.nytimes.com/games/wordle/index.html"
     try:
         r = requests.get(NYT_API.format(date=date_str), timeout=10, verify=False)
@@ -66,7 +66,7 @@ def _run_wordle(date_str: str, first_guess: str) -> GameResult:
             error=f"NYT word lists not found (answer={answer}). Run: py -m sedecordle_bot.extract_nyt_word_lists",
         )
 
-    board = simulate_single_board(answer, allowed, answers, max_turns=6, first_guess=first_guess)
+    board = simulate_single_board(answer, allowed, answers, max_turns=6, opening_guesses=opening_guesses)
     return GameResult(game="Wordle", url=url, date=date_str, boards=[board])
 
 
@@ -101,7 +101,7 @@ def _make_boards_from_result(raw: dict, num_boards: int, game: str) -> list[Boar
 # Dordle
 # ---------------------------------------------------------------------------
 
-async def _run_dordle_async(first_guess: str) -> GameResult:
+async def _run_dordle_async(opening_guesses: tuple[str, ...]) -> GameResult:
     from .dordle_bot import run_bot, URL
     raw: dict = {}
     try:
@@ -112,7 +112,7 @@ async def _run_dordle_async(first_guess: str) -> GameResult:
             dry_run=False,
             user_data_dir=None,
             max_turns=7,
-            first_guess=first_guess,
+            opening_guesses=opening_guesses,
             result=raw,
         )
     except Exception as exc:
@@ -129,7 +129,7 @@ async def _run_dordle_async(first_guess: str) -> GameResult:
 # Quordle
 # ---------------------------------------------------------------------------
 
-async def _run_quordle_async(first_guess: str) -> GameResult:
+async def _run_quordle_async(opening_guesses: tuple[str, ...]) -> GameResult:
     from .quordle_bot import run_bot, URL
     raw: dict = {}
     try:
@@ -140,7 +140,7 @@ async def _run_quordle_async(first_guess: str) -> GameResult:
             dry_run=False,
             user_data_dir=None,
             max_turns=9,
-            first_guess=first_guess,
+            opening_guesses=opening_guesses,
             result=raw,
         )
     except Exception as exc:
@@ -157,7 +157,7 @@ async def _run_quordle_async(first_guess: str) -> GameResult:
 # Octordle
 # ---------------------------------------------------------------------------
 
-async def _run_octordle_async(first_guess: str) -> GameResult:
+async def _run_octordle_async(opening_guesses: tuple[str, ...]) -> GameResult:
     from .octordle_bot import run_bot, URL
     raw: dict = {}
     try:
@@ -168,7 +168,7 @@ async def _run_octordle_async(first_guess: str) -> GameResult:
             dry_run=False,
             user_data_dir=None,
             max_turns=13,
-            first_guess=first_guess,
+            opening_guesses=opening_guesses,
             result=raw,
         )
     except Exception as exc:
@@ -185,7 +185,7 @@ async def _run_octordle_async(first_guess: str) -> GameResult:
 # Sedecordle
 # ---------------------------------------------------------------------------
 
-async def _run_sedecordle_async(first_guess: str) -> GameResult:
+async def _run_sedecordle_async(opening_guesses: tuple[str, ...]) -> GameResult:
     from .bot import run_bot, ROOT_URL
     raw: dict = {}
     try:
@@ -196,6 +196,7 @@ async def _run_sedecordle_async(first_guess: str) -> GameResult:
             url=ROOT_URL,
             dry_run=False,
             user_data_dir=None,
+            opening_guesses=opening_guesses,
             result=raw,
         )
     except Exception as exc:
@@ -318,13 +319,13 @@ def _run_tilerdle() -> GameResult:
 # Orchestrator
 # ---------------------------------------------------------------------------
 
-async def _run_all(first_guess: str) -> list[GameResult]:
+async def _run_all(opening_guesses: tuple[str, ...]) -> list[GameResult]:
     date_str = str(datetime.date.today())
     results: list[GameResult] = []
 
     # Wordle is synchronous (HTTP only)
     print("=== Wordle ===")
-    results.append(_run_wordle(date_str, first_guess))
+    results.append(_run_wordle(date_str, opening_guesses))
     print(f"  {results[-1].boards[0].answer if results[-1].boards else results[-1].error}")
 
     # Tilerdle is HTTP-only — run synchronously before the browser queue.
@@ -345,10 +346,10 @@ async def _run_all(first_guess: str) -> list[GameResult]:
 
     # Browser-based games run sequentially to avoid resource pressure.
     for label, coro in [
-        ("Dordle",        _run_dordle_async(first_guess)),
-        ("Quordle",       _run_quordle_async(first_guess)),
-        ("Octordle",      _run_octordle_async(first_guess)),
-        ("Sedecordle",    _run_sedecordle_async(first_guess)),
+        ("Dordle",        _run_dordle_async(opening_guesses)),
+        ("Quordle",       _run_quordle_async(opening_guesses)),
+        ("Octordle",      _run_octordle_async(opening_guesses)),
+        ("Sedecordle",    _run_sedecordle_async(opening_guesses)),
         ("Waffle",        _run_waffle_async()),
         ("NumberWaffle",  _run_numberwaffle_async()),
     ]:
@@ -373,15 +374,18 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="Run all daily puzzle solvers and email results.")
     ap.add_argument("--no-email", action="store_true", help="Build report but skip sending email.")
     ap.add_argument("--print-html", action="store_true", help="Print the HTML report to stdout.")
-    ap.add_argument("--first-guess", type=str, default=None, help="Opening guess (default: arose).")
+    ap.add_argument("--opening-guesses", type=str, default=None,
+                    help="Comma-separated opening guess sequence (default: arose,linty,chump).")
     args = ap.parse_args(argv)
 
-    first_guess = (args.first_guess or os.getenv("PUZZLE_FIRST_GUESS") or DEFAULT_FIRST_GUESS).lower()
+    env_guesses = os.getenv("PUZZLE_OPENING_GUESSES") or os.getenv("PUZZLE_FIRST_GUESS")
+    raw = args.opening_guesses or env_guesses or ",".join(DEFAULT_OPENING_GUESSES)
+    opening_guesses = tuple(g.strip().lower() for g in raw.split(",") if g.strip())
     to_addr = os.getenv("PUZZLE_EMAIL_TO", DEFAULT_TO)
     from_addr = os.getenv("PUZZLE_EMAIL_FROM", DEFAULT_FROM)
     app_password = os.getenv("GMAIL_APP_PASSWORD", "")
 
-    results = asyncio.run(_run_all(first_guess))
+    results = asyncio.run(_run_all(opening_guesses))
     date_str = str(datetime.date.today())
     html = build_html_report(date_str, results)
 
