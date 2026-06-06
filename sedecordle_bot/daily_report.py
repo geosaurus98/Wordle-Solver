@@ -338,8 +338,10 @@ async def _run_all(first_guess: str) -> list[GameResult]:
     if tilerdle_gr.error:
         print(f"  ERROR: {tilerdle_gr.error[:120]}")
     else:
-        words = (tilerdle_gr.extra or {}).get("words", [])
-        print(f"  Theme: {(tilerdle_gr.extra or {}).get('theme')}; words: {words}")
+        extra = tilerdle_gr.extra or {}
+        across = extra.get("across", [])
+        down = extra.get("down", [])
+        print(f"  Theme: {extra.get('theme')}; across={across}; down={down}")
 
     # Browser-based games run sequentially to avoid resource pressure.
     for label, coro in [

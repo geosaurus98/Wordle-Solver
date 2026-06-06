@@ -191,9 +191,7 @@ def _game_card_html(gr: GameResult) -> str:
                 )
             if down_items:
                 sections.append(
-                    f'<p style="margin:6px 0 2px"><strong>Down</strong>'
-                    f' <span style="color:#aaa;font-size:0.8em;font-weight:normal">'
-                    f'(partial — _ = intersection letter)</span></p>'
+                    f'<p style="margin:6px 0 2px"><strong>Down</strong></p>'
                     f'<ul style="margin:4px 0 8px">{down_items}</ul>'
                 )
 
@@ -203,8 +201,9 @@ def _game_card_html(gr: GameResult) -> str:
                 + "".join(sections)
             )
             status = (
-                f"✅ {len(across_words)} across"
-                + (f" + {len(down_words)} down (partial)" if down_words else "")
+                f"✅ {len(across_words)} across + {len(down_words)} down"
+                if across_words and down_words
+                else f"✅ {len(across_words) + len(down_words)} words"
             )
         else:
             body = f"<p>Theme: {theme}</p><p>No words extracted.</p>"

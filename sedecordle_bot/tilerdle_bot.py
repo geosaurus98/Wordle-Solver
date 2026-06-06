@@ -4,28 +4,20 @@ from __future__ import annotations
 Tilerdle solver for https://knotwise.games/games/tilerdle
 
 Fetches the day's puzzle from the REST API (no browser needed) and extracts
-the hidden words from the tile letter grids.
+all crossword words directly from the tile letter data.
 
 Crossword structure
 -------------------
-Each tile cell encodes [letter, wordIndex, letterIndex].  letterIndex is the
-absolute position of that letter within its word (column for across words,
-row for down words).
+Each tile cell encodes [letter, x, y] where x is the absolute grid column
+and y is the absolute grid row of that letter in the solved crossword.
+(Confirmed from the game's JS source: cells are parsed as
+ {value: letter, answer: {x: col, y: row}}.)
 
-* Across words   – letterIndex values are consecutive (step = 1).  Every
-                   letter of the word is present in a moveable tile.
-* Down words     – letterIndex values step by 2 (e.g. 8, 10, 12).  The
-                   odd-index positions are crossword intersections whose cells
-                   are owned by the crossing across tile, so only the
-                   non-intersection letters appear in the down tile.
-                   A down word with 3 visible letters is actually 5 letters
-                   long (positions p, p+1*, p+2, p+3*, p+4 where * = gap).
-
-Single-letter fragments and words with < 3 visible letters are discarded.
+We build the full solved grid from all tile cells, then scan rows for across
+words and columns for down words (consecutive letter runs >= 3 letters).
 """
 
 import datetime
-from collections import defaultdict
 
 import requests
 import urllib3
@@ -40,59 +32,52 @@ _API = "https://knotwise.games/api/tilerdle/puzzle/{date}"
 
 def _extract_words(tiles: list[dict]) -> dict[str, list[str]]:
     """
-    Return {"across": [...], "down": [...]} where:
-      across – complete words from contiguous-step-1 letterIndex runs (>= 3 letters)
-      down   – partial sequences from step-2 letterIndex patterns (>= 3 visible letters),
-               formatted as "A_H_A" to show the two unknown intersection letters
+    Return {"across": [...], "down": [...]} of all crossword words (>= 3 letters).
+
+    Each cell [letter, x, y] gives the letter's solved grid position.
+    We build grid[(x, y)] = letter, then scan rows (across) and columns (down)
+    for consecutive letter runs.
     """
-    words_map: dict[int, dict[int, str]] = defaultdict(dict)
+    grid: dict[tuple[int, int], str] = {}
     for tile in tiles:
         for row in tile.get("grid", []):
             for cell in row:
                 if cell:
-                    letter, word_idx, letter_idx = cell
-                    words_map[word_idx][letter_idx] = letter.upper()
+                    letter, x, y = cell
+                    grid[(x, y)] = letter.upper()
+
+    if not grid:
+        return {"across": [], "down": []}
+
+    max_x = max(x for x, _ in grid)
+    max_y = max(y for _, y in grid)
 
     across: list[str] = []
     down: list[str] = []
 
-    for _, letters in sorted(words_map.items()):
-        sorted_pairs = sorted(letters.items())  # [(letterIdx, letter), ...]
-        n = len(sorted_pairs)
-        if n < 2:
-            continue
+    # Scan each row for consecutive letter runs (across words)
+    for row_y in range(max_y + 1):
+        run = ""
+        for col_x in range(max_x + 2):  # +2 to flush the last run
+            letter = grid.get((col_x, row_y), "")
+            if letter:
+                run += letter
+            else:
+                if len(run) >= 3:
+                    across.append(run)
+                run = ""
 
-        steps = [sorted_pairs[i + 1][0] - sorted_pairs[i][0] for i in range(n - 1)]
-
-        if all(s == 1 for s in steps):
-            # Contiguous run — complete across word.
-            word = "".join(ltr for _, ltr in sorted_pairs)
-            if len(word) >= 3:
-                across.append(word)
-
-        elif all(s == 2 for s in steps):
-            # Pure step-2 — down word, only non-intersection letters visible.
-            # Format as "A_H_A" to show the unknown intersection positions.
-            letters_list = [ltr for _, ltr in sorted_pairs]
-            if len(letters_list) >= 3:
-                down.append("_".join(letters_list))
-
-        else:
-            # Mixed pattern (e.g. RECEPTION: steps 1…1,2,2) — the long contiguous
-            # prefix is the across word; any step-2 tail is discarded.
-            best_run: list[str] = []
-            current_run: list[str] = [sorted_pairs[0][1]]
-            for i in range(1, n):
-                if steps[i - 1] == 1:
-                    current_run.append(sorted_pairs[i][1])
-                else:
-                    if len(current_run) > len(best_run):
-                        best_run = current_run[:]
-                    current_run = [sorted_pairs[i][1]]
-            if len(current_run) > len(best_run):
-                best_run = current_run
-            if len(best_run) >= 3:
-                across.append("".join(best_run))
+    # Scan each column for consecutive letter runs (down words)
+    for col_x in range(max_x + 1):
+        run = ""
+        for row_y in range(max_y + 2):  # +2 to flush the last run
+            letter = grid.get((col_x, row_y), "")
+            if letter:
+                run += letter
+            else:
+                if len(run) >= 3:
+                    down.append(run)
+                run = ""
 
     return {"across": across, "down": down}
 
