@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import ceil
 from typing import Iterable
 
 
@@ -149,6 +150,9 @@ def solve_waffle(
     # Backtracking over slots with letter multiset pruning.
     assigned_letters: dict[tuple[int, int], str] = {}
     chosen_words: dict[str, str] = {}
+    current_grid = {(t.x, t.y): t.letter.lower() for t in puzzle.tiles.values()}
+    best_solution: dict[tuple[int, int], str] | None = None
+    best_swap_count: int | None = None
 
     # Pre-sort slots by candidate count (dynamic MRV below as well).
     slot_order = sorted(slots.keys(), key=lambda s: len(slot_cands[s]))
@@ -209,13 +213,29 @@ def solve_waffle(
         return True
 
     def backtrack(idx: int) -> bool:
+        nonlocal best_solution, best_swap_count
         if idx == len(slot_order):
             # All slots picked, all positions should be filled.
             if len(assigned_letters) != 21:
                 return False
             if any(v != 0 for v in remaining.values()):
                 return False
-            return satisfies_intersection_yellows()
+            if not satisfies_intersection_yellows():
+                return False
+
+            candidate = dict(assigned_letters)
+            try:
+                swaps = plan_swaps(current_grid, candidate, max_swaps=15)
+            except ValueError:
+                return False  # This word assignment needs >15 swaps — skip it.
+            swap_count = len(swaps)
+            if best_swap_count is None or swap_count < best_swap_count:
+                best_swap_count = swap_count
+                best_solution = candidate
+                # Daily Waffle is designed for ≤10 swaps; stop searching once we hit that.
+                if swap_count <= 10:
+                    return True
+            return False
 
         # Dynamic MRV: choose among remaining slots the one with smallest filtered cand count.
         remaining_slots = [s for s in slot_order if s not in chosen_words]
@@ -248,51 +268,104 @@ def solve_waffle(
             unplace_word(best_s, changed)
         return False
 
-    if not backtrack(0):
+    found_in_limit = backtrack(0)
+    if not found_in_limit and best_solution is None:
         raise ValueError("No solution found")
 
-    return dict(assigned_letters)
+    assert best_solution is not None
+    return best_solution
 
 
 def plan_swaps(
     current: dict[tuple[int, int], str],
     target: dict[tuple[int, int], str],
+    max_swaps: int = 60,
 ) -> list[tuple[tuple[int, int], tuple[int, int]]]:
     """
-    Produces a simple (not guaranteed minimal with duplicates) swap plan to transform current->target.
+    Produces a near-optimal/optimal swap plan (bounded search) to transform current->target.
+    """
+    return _plan_swaps_bounded(current, target, max_swaps=max_swaps)
+
+
+def _plan_swaps_bounded(
+    current: dict[tuple[int, int], str],
+    target: dict[tuple[int, int], str],
+    max_swaps: int,
+) -> list[tuple[tuple[int, int], tuple[int, int]]]:
+    """
+    Depth-bounded search for a shortest swap sequence.
+    Works well on Waffle-sized boards (21 tiles) and handles duplicate letters.
     """
     pos = waffle_positions()
-    cur = [current[p] for p in pos]
+    cur0 = tuple(current[p] for p in pos)
     tgt = [target[p] for p in pos]
+    n = len(pos)
 
-    swaps: list[tuple[tuple[int, int], tuple[int, int]]] = []
+    if cur0 == tuple(tgt):
+        return []
 
-    def find_j(i: int) -> int | None:
+    def mismatch_count(state: tuple[str, ...]) -> int:
+        return sum(1 for i in range(n) if state[i] != tgt[i])
+
+    # admissible lower bound: one swap can fix at most two mismatches
+    def lower_bound(state: tuple[str, ...]) -> int:
+        return ceil(mismatch_count(state) / 2)
+
+    best_seen_remaining: dict[tuple[str, ...], int] = {}
+    path: list[tuple[int, int]] = []
+    answer: list[tuple[int, int]] | None = None
+
+    def dfs(state: tuple[str, ...], remaining_depth: int) -> bool:
+        nonlocal answer
+        if state == tuple(tgt):
+            answer = list(path)
+            return True
+        if lower_bound(state) > remaining_depth:
+            return False
+
+        prev_best = best_seen_remaining.get(state)
+        if prev_best is not None and prev_best >= remaining_depth:
+            return False
+        best_seen_remaining[state] = remaining_depth
+
+        # Focus on the first incorrect index; try swaps that place the needed letter there.
+        i = next(idx for idx in range(n) if state[idx] != tgt[idx])
         want = tgt[i]
-        # Prefer swapping with a mispositioned tile that contains the wanted letter.
-        for j in range(len(pos)):
-            if i == j:
-                continue
-            if cur[j] == want and cur[j] != tgt[j]:
-                return j
-        for j in range(len(pos)):
-            if i == j:
-                continue
-            if cur[j] == want:
-                return j
-        return None
 
-    for _ in range(60):  # safety
-        if cur == tgt:
-            break
-        i = next((k for k in range(len(pos)) if cur[k] != tgt[k]), None)
-        if i is None:
-            break
-        j = find_j(i)
-        if j is None:
-            break
-        cur[i], cur[j] = cur[j], cur[i]
-        swaps.append((pos[i], pos[j]))
+        candidates: list[tuple[int, int]] = []
+        for j in range(n):
+            if j == i:
+                continue
+            if state[j] != want:
+                continue
+            gain = (state[i] == tgt[j]) + (state[j] == tgt[i])  # 0..2
+            # Prefer swaps that repair two indices, then one.
+            candidates.append((2 - gain, j))
 
-    return swaps
+        # Fallback in degenerate states (should be rare with valid multisets).
+        if not candidates:
+            for j in range(n):
+                if j == i:
+                    continue
+                if state[j] != tgt[j]:
+                    candidates.append((2, j))
+
+        for _, j in sorted(candidates):
+            lst = list(state)
+            lst[i], lst[j] = lst[j], lst[i]
+            nxt = tuple(lst)
+            path.append((i, j))
+            if dfs(nxt, remaining_depth - 1):
+                return True
+            path.pop()
+        return False
+
+    for depth in range(lower_bound(cur0), max_swaps + 1):
+        best_seen_remaining.clear()
+        path.clear()
+        if dfs(cur0, depth):
+            assert answer is not None
+            return [(pos[i], pos[j]) for i, j in answer]
+
+    raise ValueError(f"Could not produce swap plan within {max_swaps} swaps")
 
