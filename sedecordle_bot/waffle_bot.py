@@ -5,6 +5,7 @@ import asyncio
 import time
 from pathlib import Path
 
+
 from playwright.async_api import Page, async_playwright
 
 from .solver import load_word_list
@@ -41,39 +42,53 @@ async def _dismiss_overlays(page: Page) -> None:
             break
 
 
-async def read_tiles(page: Page) -> WafflePuzzle:
-    await page.wait_for_load_state("domcontentloaded")
-    await asyncio.sleep(1.0)
-    await _dismiss_overlays(page)
-    await asyncio.sleep(0.3)
+_TILE_JS = """
+() => {
+  // Try draggable tiles first; fall back to any .tile with data-pos if selector changed.
+  let els = Array.from(document.querySelectorAll('div.tile.draggable'));
+  if (els.length === 0) els = Array.from(document.querySelectorAll('[data-pos]'));
+  return els.map(el => {
+    const posRaw = el.getAttribute('data-pos') || '';
+    let pos = null;
+    try { pos = JSON.parse(posRaw); } catch(e) { pos = null; }
+    const cls = (el.className || '').toString().split(/\\s+/);
+    const text = (el.textContent || '').trim();
+    const color =
+      cls.includes('green') ? 'green' :
+      cls.includes('yellow') ? 'yellow' :
+      cls.includes('grey') ? 'grey' :
+      cls.includes('gray') ? 'grey' :
+      'white';
+    return {
+      x: pos && typeof pos.x === 'number' ? pos.x : null,
+      y: pos && typeof pos.y === 'number' ? pos.y : null,
+      letter: text,
+      color,
+      className: (el.className || '').toString(),
+    };
+  });
+}
+"""
 
-    tiles = await page.evaluate(
-        """
-        () => {
-          const els = Array.from(document.querySelectorAll('div.tile.draggable'));
-          return els.map(el => {
-            const posRaw = el.getAttribute('data-pos') || '';
-            let pos = null;
-            try { pos = JSON.parse(posRaw); } catch(e) { pos = null; }
-            const cls = (el.className || '').toString().split(/\\s+/);
-            const text = (el.textContent || '').trim();
-            const color =
-              cls.includes('green') ? 'green' :
-              cls.includes('yellow') ? 'yellow' :
-              cls.includes('grey') ? 'grey' :
-              cls.includes('gray') ? 'grey' :
-              'white';
-            return {
-              x: pos && typeof pos.x === 'number' ? pos.x : null,
-              y: pos && typeof pos.y === 'number' ? pos.y : null,
-              letter: text,
-              color,
-              className: (el.className || '').toString(),
-            };
-          });
-        }
-        """
-    )
+
+async def read_tiles(page: Page) -> WafflePuzzle:
+    # Poll for up to 20 s — the SPA may take a moment to render tiles after domcontentloaded.
+    deadline = time.monotonic() + 20.0
+    tiles: list[dict] = []
+    while time.monotonic() < deadline:
+        await _dismiss_overlays(page)
+        tiles = await page.evaluate(_TILE_JS)
+        valid = [
+            t for t in tiles
+            if t.get("x") is not None and t.get("y") is not None
+            and (t.get("letter") or "").strip()
+        ]
+        if len(valid) >= 21:
+            tiles = valid
+            break
+        await asyncio.sleep(0.5)
+    else:
+        raise RuntimeError(f"Expected 21 tiles, found {len(tiles)} after 20 s")
 
     out: dict[tuple[int, int], Tile] = {}
     for t in tiles:
@@ -161,7 +176,14 @@ async def do_swap(page: Page, a: tuple[int, int], b: tuple[int, int]) -> None:
     await asyncio.sleep(0.2)
 
 
-async def run_bot(headful: bool, slowmo_ms: int, url: str, user_data_dir: str | None, dry_run: bool) -> None:
+async def run_bot(
+    headful: bool,
+    slowmo_ms: int,
+    url: str,
+    user_data_dir: str | None,
+    dry_run: bool,
+    result: dict | None = None,
+) -> dict | None:
     words = load_5_letter_words()
     if not words:
         raise RuntimeError(
@@ -192,12 +214,25 @@ async def run_bot(headful: bool, slowmo_ms: int, url: str, user_data_dir: str | 
         print("Read 21 tiles.")
         if dry_run:
             await context.close()
-            return
+            return result
 
         solution = solve_waffle(puzzle, words)
         current = {(t.x, t.y): t.letter.lower() for t in puzzle.tiles.values()}
         swaps = plan_swaps(current, solution)
         print(f"Planned swaps: {len(swaps)}")
+
+        if result is not None:
+            from .waffle_solver import slot_positions
+            slots = slot_positions()
+            result["solution_words"] = {
+                s: "".join(solution.get(p, "?") for p in ps)
+                for s, ps in slots.items()
+            }
+            result["swaps"] = [{"from": list(a), "to": list(b)} for a, b in swaps]
+            result["initial_grid"] = {
+                f"{t.x},{t.y}": {"letter": t.letter, "color": t.color}
+                for t in puzzle.tiles.values()
+            }
 
         # Execute swaps.
         for i, (a, b) in enumerate(swaps, start=1):
@@ -218,6 +253,7 @@ async def run_bot(headful: bool, slowmo_ms: int, url: str, user_data_dir: str | 
 
         await asyncio.sleep(1.0)
         await context.close()
+        return result
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

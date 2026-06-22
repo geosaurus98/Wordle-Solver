@@ -12,6 +12,17 @@ py -m playwright install
 
 ## Run
 
+Extract all word lists
+py -m sedecordle_bot.extract_word_lists
+py -m sedecordle_bot.extract_nyt_word_lists
+
+Run Wordle, Octordle and sedecordle
+py -m sedecordle_bot.bot --headful
+py -m sedecordle_bot.savior_bot --headful
+py -m sedecordle_bot.nyt_wordle_bot --headful
+py -m sedecordle_bot.waffle_bot --headful
+py -m sedecordle_bot.octordle_bot --headful
+
 1) Extract the game's word list (saved under `sedecordle_bot\data\`):
 
 ```powershell
@@ -82,6 +93,33 @@ Dry-run (just detect boards):
 
 ```powershell
 py -m sedecordle_bot.octordle_bot --dry-run
+```
+
+## NYT Sudoku (easy / medium / hard)
+
+Run the NYT Sudoku bot:
+
+```powershell
+py -m sedecordle_bot.nyt_sudoku_bot --headful --difficulty easy
+```
+
+Other difficulties:
+
+```powershell
+py -m sedecordle_bot.nyt_sudoku_bot --headful --difficulty medium
+py -m sedecordle_bot.nyt_sudoku_bot --headful --difficulty hard
+```
+
+Dry-run (read board + solve locally, do not type into page):
+
+```powershell
+py -m sedecordle_bot.nyt_sudoku_bot --difficulty hard --dry-run
+```
+
+Persistent browser profile (optional):
+
+```powershell
+py -m sedecordle_bot.nyt_sudoku_bot --headful --difficulty medium --user-data-dir .\nyt_sudoku_profile
 ```
 
 ## Notes

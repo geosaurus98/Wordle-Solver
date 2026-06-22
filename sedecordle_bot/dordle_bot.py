@@ -116,21 +116,30 @@ async def _start_daily_game(game: Page | Frame) -> bool:
 
 async def _current_row(game: Page | Frame) -> int:
     """
-    Return the 0-based index of the current active row (first empty row in board 1).
-    Returns MAX_TURNS when all rows are filled.
+    Return the 0-based index of the current active row.
+    Uses the maximum filled row across ALL boards so that after one board is
+    solved (and its subsequent rows remain blank), progress on the remaining
+    board is still correctly detected.
     """
     return int(
         await game.evaluate(
             """
-            (maxTurns) => {
-              for (let row = 1; row <= maxTurns; row++) {
-                const el = document.getElementById('box1,' + row + ',1');
-                if (!el || el.textContent.trim() === '') return row - 1;
+            ({maxTurns, numBoards}) => {
+              let maxFilled = 0;
+              for (let board = 1; board <= numBoards; board++) {
+                for (let row = 1; row <= maxTurns; row++) {
+                  const el = document.getElementById('box' + board + ',' + row + ',1');
+                  if (!el || el.textContent.trim() === '') {
+                    maxFilled = Math.max(maxFilled, row - 1);
+                    break;
+                  }
+                  if (row === maxTurns) maxFilled = Math.max(maxFilled, maxTurns);
+                }
               }
-              return maxTurns;
+              return maxFilled;
             }
             """,
-            MAX_TURNS,
+            {"maxTurns": MAX_TURNS, "numBoards": NUM_BOARDS},
         )
     )
 
@@ -217,6 +226,8 @@ async def run_bot(
         guessed: set[str] = set()
         _board_answers: list[str | None] = [None] * NUM_BOARDS
         _board_guesses: list[list[dict]] = [[] for _ in range(NUM_BOARDS)]
+        _consecutive_rejections = 0
+        _MAX_CONSECUTIVE_REJECTIONS = 20
 
         while not all(solved):
             row_idx = await _current_row(game)
@@ -280,13 +291,18 @@ async def run_bot(
                 await asyncio.sleep(0.1)
 
             if not accepted:
+                _consecutive_rejections += 1
                 print(f"  '{guess}' not accepted; removing and retrying.")
+                if _consecutive_rejections >= _MAX_CONSECUTIVE_REJECTIONS:
+                    print(f"  Too many consecutive rejections ({_consecutive_rejections}); giving up this turn.")
+                    break
                 guessed.add(guess)
                 allowed = [w for w in allowed if w != guess]
                 for _ in range(5):
                     await page.keyboard.press("Backspace")
                 continue
 
+            _consecutive_rejections = 0
             guessed.add(guess)
             allowed = [w for w in allowed if w != guess]
             await asyncio.sleep(0.5)  # allow flip animations to complete

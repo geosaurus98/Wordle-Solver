@@ -105,9 +105,9 @@ async def _navigate_to_daily_game(page) -> None:
         await page.goto(_HUB, wait_until="domcontentloaded", timeout=60_000)
     except Exception:
         pass
-    # Give the hub 15 s to complete async initialisation (stays on "Loading.." visually,
+    # Give the hub 25 s to complete async initialisation (stays on "Loading.." visually,
     # but state is being set by background XHR/cookie calls).
-    await asyncio.sleep(15.0)
+    await asyncio.sleep(25.0)
 
     # Step 2: JS-navigate to the archive URL (SPA intercepts, no Britannica redirect).
     # The evaluate raises "Execution context was destroyed" because the navigation
@@ -118,7 +118,7 @@ async def _navigate_to_daily_game(page) -> None:
         pass
 
     # Step 3: Poll for boards (typically appear within 8 s of the JS navigate).
-    deadline = time.monotonic() + 30.0
+    deadline = time.monotonic() + 45.0
     while time.monotonic() < deadline:
         n = await page.locator(".board").count()
         if n >= 8:

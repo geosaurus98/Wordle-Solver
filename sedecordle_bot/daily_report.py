@@ -233,7 +233,7 @@ async def _run_waffle_async() -> GameResult:
             page = await context.new_page()
             await page.goto(URL, wait_until="domcontentloaded", timeout=120_000)
             import asyncio as _asyncio
-            await _asyncio.sleep(1.2)
+            await _asyncio.sleep(2.0)
             await _dismiss_overlays(page)
             puzzle = await read_tiles(page)
             await browser.close()
