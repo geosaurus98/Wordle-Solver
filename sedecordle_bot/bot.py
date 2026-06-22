@@ -25,6 +25,7 @@ class DetectedBoards:
     tile_selector: str
     board_selectors: list[str]  # selectors like [data-bot-board="0"]
     tiles_per_board: int
+    layout: str = "table"  # "table" (regular sedecordle) or "divboard" (sedec-order)
 
 
 ABSENT_BG = "rgb(24, 26, 27)"
@@ -55,6 +56,8 @@ async def detect_boards(page: Page) -> DetectedBoards:
     await page.wait_for_load_state("domcontentloaded")
     await asyncio.sleep(0.2)
     await _dismiss_overlays(page)
+
+    # Try table layout first (regular sedecordle).
     res = await page.evaluate(
         """
         () => {
@@ -74,13 +77,44 @@ async def detect_boards(page: Page) -> DetectedBoards:
         }
         """
     )
-    if not res or int(res.get("count", 0)) < 16:
-        raise RuntimeError(f"Failed to detect 16 board tables (found {res.get('count') if res else 'none'}).")
+    if res and int(res.get("count", 0)) >= 16:
+        return DetectedBoards(
+            tile_selector="td",
+            board_selectors=res["boardSelectors"][:16],
+            tiles_per_board=105,
+            layout="table",
+        )
 
-    return DetectedBoards(
-        tile_selector="td",
-        board_selectors=res["boardSelectors"][:16],
-        tiles_per_board=105,
+    # Fallback: div.board / div.cell layout (sedec-order).
+    res2 = await page.evaluate(
+        """
+        () => {
+          const boards = Array.from(document.querySelectorAll('div.board'));
+          const picked = [];
+          for (const b of boards) {
+            const n = b.querySelectorAll('div.cell').length;
+            if (n >= 100 && n % 5 === 0) picked.push(b);
+          }
+          picked.forEach((b,i) => b.setAttribute('data-bot-board', String(i)));
+          return {
+            count: picked.length,
+            boardSelectors: picked.map((_,i) => `div.board[data-bot-board="${i}"]`),
+          };
+        }
+        """
+    )
+    if res2 and int(res2.get("count", 0)) >= 16:
+        return DetectedBoards(
+            tile_selector="div.cell",
+            board_selectors=res2["boardSelectors"][:16],
+            tiles_per_board=105,
+            layout="divboard",
+        )
+
+    table_count = res.get("count", 0) if res else 0
+    div_count = res2.get("count", 0) if res2 else 0
+    raise RuntimeError(
+        f"Failed to detect 16 boards (table found {table_count}, divboard found {div_count})."
     )
 
 
@@ -104,11 +138,27 @@ async def clear_current_guess(page: Page, n: int = 5) -> None:
 
 
 async def current_turn_index(page: Page, detected: DetectedBoards, board_idx: int) -> int:
-    """
-    Returns the index of the first fully-empty row for a given board table.
-    This corresponds to the "current guess row" (i.e., how many guesses have been committed).
-    """
     sel = detected.board_selectors[board_idx]
+    if detected.layout == "divboard":
+        return int(
+            await page.evaluate(
+                """
+                (boardIdx) => {
+                  const boards = Array.from(document.querySelectorAll('div.board')).filter(b => b.querySelectorAll('div.cell').length >= 100);
+                  const b = boards[boardIdx];
+                  if (!b) return 0;
+                  const cells = Array.from(b.querySelectorAll('div.cell'));
+                  const rows = Math.floor(cells.length / 5);
+                  for (let r = 0; r < rows; r++) {
+                    const row = cells.slice(r*5, r*5+5);
+                    if (row.map(c => (c.textContent || '').trim()).join('') === '') return r;
+                  }
+                  return rows;
+                }
+                """,
+                board_idx,
+            )
+        )
     return int(
         await page.evaluate(
             """
@@ -184,34 +234,57 @@ async def wait_for_acceptance(
 
 async def read_feedback_for_turn(page: Page, detected: DetectedBoards, turn_idx: int) -> list[list[int]]:
     boards = detected.board_selectors
-    res: list[list[int]] = await page.evaluate(
-        """
-        ({boards, turnIdx, absentBg, presentBg, correctBg}) => {
-          function state(td) {
-            const bg = getComputedStyle(td).backgroundColor;
-            if (bg === correctBg) return 2;
-            if (bg === presentBg) return 1;
-            if (bg === absentBg) return 0;
-            // Fallback: unknown colors treated as absent (common for empty/unrevealed styling).
-            return 0;
-          }
-
-          const out = [];
-          for (const bSel of boards) {
-            const b = document.querySelector(bSel);
-            if (!b) { out.push([null,null,null,null,null]); continue; }
-            const rows = Array.from(b.querySelectorAll('tr'));
-            if (turnIdx >= rows.length) { out.push([null,null,null,null,null]); continue; }
-            const tds = Array.from(rows[turnIdx].querySelectorAll('td'));
-            if (tds.length !== 5) { out.push([null,null,null,null,null]); continue; }
-            out.push(tds.map(state));
-          }
-          return out;
-        }
-        """,
-        {"boards": boards, "turnIdx": turn_idx, "absentBg": ABSENT_BG, "presentBg": PRESENT_BG, "correctBg": CORRECT_BG},
-    )
-    # Convert nulls to -1 so caller can handle weird boards gracefully.
+    if detected.layout == "divboard":
+        res = await page.evaluate(
+            """
+            ({boardCount, turnIdx}) => {
+              function state(cell) {
+                const cls = (cell.className || '').toLowerCase();
+                if (cls.includes('green')) return 2;
+                if (cls.includes('yellow')) return 1;
+                return 0;
+              }
+              const allBoards = Array.from(document.querySelectorAll('div.board')).filter(b => b.querySelectorAll('div.cell').length >= 100);
+              const out = [];
+              for (let i = 0; i < boardCount; i++) {
+                const b = allBoards[i];
+                if (!b) { out.push([null,null,null,null,null]); continue; }
+                const cells = Array.from(b.querySelectorAll('div.cell'));
+                const row = cells.slice(turnIdx*5, turnIdx*5+5);
+                if (row.length !== 5) { out.push([null,null,null,null,null]); continue; }
+                out.push(row.map(state));
+              }
+              return out;
+            }
+            """,
+            {"boardCount": len(boards), "turnIdx": turn_idx},
+        )
+    else:
+        res = await page.evaluate(
+            """
+            ({boards, turnIdx, absentBg, presentBg, correctBg}) => {
+              function state(td) {
+                const bg = getComputedStyle(td).backgroundColor;
+                if (bg === correctBg) return 2;
+                if (bg === presentBg) return 1;
+                if (bg === absentBg) return 0;
+                return 0;
+              }
+              const out = [];
+              for (const bSel of boards) {
+                const b = document.querySelector(bSel);
+                if (!b) { out.push([null,null,null,null,null]); continue; }
+                const rows = Array.from(b.querySelectorAll('tr'));
+                if (turnIdx >= rows.length) { out.push([null,null,null,null,null]); continue; }
+                const tds = Array.from(rows[turnIdx].querySelectorAll('td'));
+                if (tds.length !== 5) { out.push([null,null,null,null,null]); continue; }
+                out.push(tds.map(state));
+              }
+              return out;
+            }
+            """,
+            {"boards": boards, "turnIdx": turn_idx, "absentBg": ABSENT_BG, "presentBg": PRESENT_BG, "correctBg": CORRECT_BG},
+        )
     out2: list[list[int]] = []
     for row in res:
         out2.append([int(x) if x is not None else -1 for x in row])
@@ -219,27 +292,40 @@ async def read_feedback_for_turn(page: Page, detected: DetectedBoards, turn_idx:
 
 
 async def read_guess_for_turn(page: Page, detected: DetectedBoards, turn_idx: int, board_idx: int = 0) -> str | None:
-    """
-    Reads the guess word (5 letters) shown on the grid for a given turn.
-    In Sedecordle/Savior, the guess is shared across all boards, so any board works.
-    """
     sel = detected.board_selectors[board_idx]
-    guess = await page.evaluate(
-        """
-        ({boardSel, turnIdx}) => {
-          const b = document.querySelector(boardSel);
-          if (!b) return null;
-          const rows = Array.from(b.querySelectorAll('tr'));
-          if (turnIdx >= rows.length) return null;
-          const tds = Array.from(rows[turnIdx].querySelectorAll('td'));
-          if (tds.length !== 5) return null;
-          const letters = tds.map(td => (td.textContent || '').trim()).join('');
-          if (letters.length !== 5) return null;
-          return letters.toLowerCase();
-        }
-        """,
-        {"boardSel": sel, "turnIdx": turn_idx},
-    )
+    if detected.layout == "divboard":
+        guess = await page.evaluate(
+            """
+            ({boardIdx, turnIdx}) => {
+              const boards = Array.from(document.querySelectorAll('div.board')).filter(b => b.querySelectorAll('div.cell').length >= 100);
+              const b = boards[boardIdx];
+              if (!b) return null;
+              const cells = Array.from(b.querySelectorAll('div.cell'));
+              const row = cells.slice(turnIdx*5, turnIdx*5+5);
+              if (row.length !== 5) return null;
+              const letters = row.map(c => (c.textContent || '').trim()).join('');
+              return letters.length === 5 ? letters.toLowerCase() : null;
+            }
+            """,
+            {"boardIdx": board_idx, "turnIdx": turn_idx},
+        )
+    else:
+        guess = await page.evaluate(
+            """
+            ({boardSel, turnIdx}) => {
+              const b = document.querySelector(boardSel);
+              if (!b) return null;
+              const rows = Array.from(b.querySelectorAll('tr'));
+              if (turnIdx >= rows.length) return null;
+              const tds = Array.from(rows[turnIdx].querySelectorAll('td'));
+              if (tds.length !== 5) return null;
+              const letters = tds.map(td => (td.textContent || '').trim()).join('');
+              if (letters.length !== 5) return null;
+              return letters.toLowerCase();
+            }
+            """,
+            {"boardSel": sel, "turnIdx": turn_idx},
+        )
     if not guess or not isinstance(guess, str):
         return None
     g = guess.strip().lower()
@@ -309,6 +395,7 @@ async def run_bot(
     url: str,
     dry_run: bool,
     user_data_dir: str | None,
+    first_guess: str,
 ) -> None:
     _ensure_word_lists_exist()
     allowed, answers = load_words()
@@ -333,7 +420,7 @@ async def run_bot(
         await _dismiss_overlays(page)
 
         detected = await detect_boards(page)
-        print(f"Detected 16 boards using tiles '{detected.tile_selector}', tiles_per_board~{detected.tiles_per_board}")
+        print(f"Detected 16 boards (layout={detected.layout}, tile={detected.tile_selector})")
         if dry_run:
             await context.close()
             return
@@ -343,6 +430,18 @@ async def run_bot(
         guessed: set[str] = set()
 
         await bootstrap_from_existing_rows(page, detected, allowed, board_candidates, solved, guessed)
+
+        opener_queue = [
+            w.strip().lower()
+            for w in (first_guess or "").split(",")
+            if w.strip()
+        ]
+
+        # In sequential mode (sedec-order), board N’s colors only appear after board N-1
+        # is solved. Track which boards are active and replay history when a new one unlocks.
+        sequential = "sedec-order" in url.lower()
+        active_boards: set[int] = {0} if sequential else set(range(16))
+        guess_history: list[tuple[int, str]] = []  # (turn_idx, guess) for retroactive catch-up
 
         while not all(solved):
             try:
@@ -354,32 +453,48 @@ async def run_bot(
             if turn_idx >= max_turns:
                 break
 
-            # If any *unsolved* board has exactly one candidate left, try that word next (once).
             active_allowed = [w for w in allowed if w not in guessed]
             if not active_allowed:
                 raise RuntimeError("No allowed guesses left (all words already guessed).")
 
-            active_candidates = [c if not solved[i] else [] for i, c in enumerate(board_candidates)]
-            # Finish small boards sooner to avoid running out of turns.
-            guess: str | None = None
-            small_threshold = 5
-            small = sorted(
-                ((len(c), i) for i, c in enumerate(board_candidates) if not solved[i] and len(c) > 0),
-                key=lambda x: x[0],
-            )
-            for n, bi in small:
-                if n > small_threshold:
-                    break
-                opts = [w for w in board_candidates[bi] if w not in guessed]
-                if not opts:
-                    continue
-                guess = choose_next_guess(opts, active_candidates)
-                break
+            # For guess selection, only consider currently active boards.
+            active_candidates = [
+                (c if not solved[i] and (not sequential or i in active_boards) else [])
+                for i, c in enumerate(board_candidates)
+            ]
 
-            if not guess:
+            # Consume openers first; once the queue is empty, switch to adaptive.
+            guess: str | None = None
+            while opener_queue:
+                candidate = opener_queue[0]
+                if candidate not in guessed and candidate in allowed:
+                    guess = opener_queue.pop(0)
+                    break
+                opener_queue.pop(0)
+
+            if guess is None:
+                # Finish small boards sooner to avoid running out of turns.
+                small_threshold = 5
+                small = sorted(
+                    (
+                        (len(c), i)
+                        for i, c in enumerate(board_candidates)
+                        if not solved[i] and len(c) > 0 and (not sequential or i in active_boards)
+                    ),
+                    key=lambda x: x[0],
+                )
+                for n, bi in small:
+                    if n > small_threshold:
+                        break
+                    opts = [w for w in board_candidates[bi] if w not in guessed]
+                    if not opts:
+                        continue
+                    guess = choose_next_guess(opts, active_candidates)
+                    break
+
+            if guess is None:
                 guess = choose_next_guess(active_allowed, active_candidates)
             if guess in guessed:
-                # Shouldn't happen, but avoid repeats defensively.
                 guess = next(w for w in active_allowed if w not in guessed)
             print(f"Turn {turn_idx+1}/{max_turns}: guessing {guess}")
 
@@ -388,7 +503,6 @@ async def run_bot(
             await submit_guess(page, guess)
             accepted = await wait_for_acceptance(page, detected, turn_board_idx, before_turn, before_left, timeout_s=9.0)
             if not accepted:
-                # Likely invalid/unsubmitted; remove and retry without consuming a turn.
                 after_left = await guesses_left(page)
                 after_turn = await current_turn_index(page, detected, turn_board_idx)
                 try:
@@ -397,12 +511,11 @@ async def run_bot(
                 except Exception:
                     shot_path = None
                 print(
-                    f"  Guess '{guess}' not accepted (invalid/unsubmitted). "
+                    f"  Guess ‘{guess}’ not accepted (invalid/unsubmitted). "
                     f"guesses_left {before_left}->{after_left}, turn {before_turn}->{after_turn}. "
-                    f"{'screenshot='+str(shot_path) if shot_path else ''}"
+                    + (f"screenshot={shot_path}" if shot_path else "")
                 )
                 allowed = [w for w in allowed if w != guess]
-                # If the game rejects the word, it cannot be an answer either.
                 for bi in range(len(board_candidates)):
                     if guess in board_candidates[bi]:
                         board_candidates[bi] = [w for w in board_candidates[bi] if w != guess]
@@ -410,22 +523,44 @@ async def run_bot(
                 continue
 
             guessed.add(guess)
+            guess_history.append((before_turn, guess))
             allowed = [w for w in allowed if w != guess]
 
             await asyncio.sleep(0.35)  # allow color updates to settle
             feedbacks = await read_feedback_for_turn(page, detected, before_turn)
 
+            newly_activated: list[int] = []
             for bi, fb in enumerate(feedbacks):
                 if solved[bi]:
                     continue
+                if sequential and bi not in active_boards:
+                    continue
                 if any(x < 0 for x in fb):
-                    # Could not parse this board’s row; skip filtering this time.
                     continue
                 filtered = filter_candidates(board_candidates[bi], guess, fb)
                 if filtered:
                     board_candidates[bi] = filtered
                 if is_solved_feedback(fb):
                     solved[bi] = True
+                    if sequential and bi + 1 < 16:
+                        active_boards.add(bi + 1)
+                        newly_activated.append(bi + 1)
+
+            # Retroactively apply all prior guesses for each newly unlocked board.
+            for new_bi in newly_activated:
+                print(f"  Board {new_bi+1} unlocked — replaying {len(guess_history)-1} prior turns...")
+                await asyncio.sleep(1.5)  # wait for the newly revealed colors to settle
+                for hist_turn, hist_guess in guess_history[:-1]:  # exclude the current turn
+                    hist_fbs = await read_feedback_for_turn(page, detected, hist_turn)
+                    hist_fb = hist_fbs[new_bi]
+                    if any(x < 0 for x in hist_fb):
+                        continue
+                    filtered = filter_candidates(board_candidates[new_bi], hist_guess, hist_fb)
+                    if filtered:
+                        board_candidates[new_bi] = filtered
+                    if is_solved_feedback(hist_fb):
+                        solved[new_bi] = True
+                        break
 
             # Progress report
             remaining = [len(c) for c in board_candidates]
@@ -451,6 +586,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Use a persistent browser profile directory (saves localStorage/cookies across runs).",
     )
+    ap.add_argument(
+        "--first-guess",
+        type=str,
+        default="AROSE,UNTIL",
+        help="Comma-separated opener sequence played before the adaptive solver. Default: AROSE,UNTIL.",
+    )
     return ap.parse_args(argv)
 
 
@@ -464,6 +605,7 @@ def main(argv: list[str] | None = None) -> None:
             url=args.url,
             dry_run=args.dry_run,
             user_data_dir=args.user_data_dir,
+            first_guess=args.first_guess,
         )
     )
 

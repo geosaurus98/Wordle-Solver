@@ -130,14 +130,27 @@ async def _extract_via_playwright() -> tuple[list[str], list[str], list[dict]]:
         await asyncio.sleep(0.8)  # allow any late async fetches
         await browser.close()
 
-    candidates: list[tuple[int, str, str, list[str]]] = []  # (count, url, ct, words)
+    # Try structured run extraction first (finds proper array literals, less noise).
+    # Fall back to broad token scan if no runs found.
+    run_candidates: list[tuple[int, str, str, list[str]]] = []
     for url, ct, txt in texts:
-        words = _WORD_TOKEN_RE.findall(txt.lower())
-        uniq = _unique_sorted(words)
-        if len(uniq) >= 500:
-            candidates.append((len(uniq), url, ct, uniq))
+        for run in _runs_of_words(txt, min_run=500):
+            uniq = _unique_sorted(run)
+            if len(uniq) >= 500:
+                run_candidates.append((len(uniq), url, ct, uniq))
 
-    candidates.sort(reverse=True, key=lambda x: x[0])
+    if run_candidates:
+        run_candidates.sort(reverse=True, key=lambda x: x[0])
+        candidates = run_candidates
+    else:
+        candidates = []
+        for url, ct, txt in texts:
+            words = _WORD_TOKEN_RE.findall(txt.lower())
+            uniq = _unique_sorted(words)
+            if len(uniq) >= 500:
+                candidates.append((len(uniq), url, ct, uniq))
+        candidates.sort(reverse=True, key=lambda x: x[0])
+
     if not candidates:
         return [], [], captured
 
