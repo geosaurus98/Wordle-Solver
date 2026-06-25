@@ -58,6 +58,13 @@ def _runs_of_words(js: str, min_run: int = 500) -> list[list[str]]:
 
 
 async def _extract_via_playwright() -> WordListExtraction:
+    # Suppress Windows-specific ConnectionResetError noise from Playwright pipe cleanup.
+    loop = asyncio.get_running_loop()
+    _orig_handler = loop.get_exception_handler() or loop.default_exception_handler
+    loop.set_exception_handler(
+        lambda lp, ctx: None if isinstance(ctx.get("exception"), ConnectionResetError) else _orig_handler(ctx)
+    )
+
     texts: list[tuple[str, str, str]] = []  # (url, content_type, text)
 
     async with async_playwright() as p:

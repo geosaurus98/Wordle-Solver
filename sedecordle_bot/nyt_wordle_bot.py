@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import asyncio
@@ -8,6 +8,7 @@ from pathlib import Path
 from playwright.async_api import Page, async_playwright
 
 from .extract_nyt_word_lists import main as extract_nyt_main
+from .fetch_nyt_answers import main as fetch_nyt_answers_main
 from .solver import (
     State,
     choose_best_guess_single_board,
@@ -180,27 +181,64 @@ async def alert_text(page: Page) -> str | None:
         return None
 
 
-async def wait_for_evaluation_or_reject(page: Page, tile_sel: str, row_idx: int, timeout_s: float = 7.0) -> tuple[bool, list[int] | None, str | None]:
+async def _check_toast(page: Page) -> str | None:
+    """Single JS evaluation covering all NYT toast selectors."""
+    try:
+        result = await page.evaluate(
+            """
+            () => {
+                const sels = ['[role="alert"]', '[data-testid="toast"]', '[class*="Toast"]', '[class*="toast"]'];
+                const pats = ['not in word list', 'not a valid', 'not enough letters'];
+                for (const sel of sels) {
+                    for (const el of document.querySelectorAll(sel)) {
+                        const t = (el.textContent || '').toLowerCase().trim();
+                        if (t && pats.some(p => t.includes(p)))
+                            return el.textContent.trim();
+                    }
+                }
+                return null;
+            }
+            """
+        )
+        return result
+    except Exception:
+        return None
+
+
+async def wait_for_evaluation_or_reject(page: Page, tile_sel: str, row_idx: int, timeout_s: float = 8.0) -> tuple[bool, list[int] | None, str | None]:
+    # Sequential polling: check toast first (fast JS eval), then tile states.
+    # No concurrent tasks — avoids CDP command interleaving issues.
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        txt = await alert_text(page)
-        if txt and ("not in word list" in txt.lower()):
+        txt = await _check_toast(page)
+        if txt:
             return False, None, txt
         row = await _tiles_row_states(page, tile_sel, row_idx)
         if row is not None:
             return True, row, None
-        await asyncio.sleep(0.08)
+        await asyncio.sleep(0.05)
     return False, None, "timeout waiting for evaluation"
 
 
 def _ensure_nyt_lists() -> tuple[list[str], list[str]]:
+    import datetime, os
     allowed_path = DATA_DIR / "nyt_allowed.txt"
     answers_path = DATA_DIR / "nyt_answers.txt"
-    if not allowed_path.exists() or not answers_path.exists():
+    if not allowed_path.exists():
         extract_nyt_main()
+    # Refresh answers daily: the API gains one new entry each day.
+    answers_stale = (
+        not answers_path.exists()
+        or datetime.date.fromtimestamp(os.path.getmtime(answers_path)) < datetime.date.today()
+    )
+    if answers_stale:
+        print("Refreshing answer list from NYT API...")
+        try:
+            fetch_nyt_answers_main()
+        except Exception as e:
+            print(f"  Answer refresh failed ({e}), using existing file.")
     allowed = load_word_list(allowed_path)
     answers = load_word_list(answers_path)
-    # Fallback to sedecordle list if NYT extraction didn't find anything.
     if not allowed:
         allowed = load_word_list(DATA_DIR / "allowed.txt")
     if not answers:
@@ -216,7 +254,7 @@ async def run_bot(
     channel: str | None,
     profile_directory: str | None,
     dry_run: bool,
-    opening_guesses: tuple[str, ...] | list[str] = ("arose", "linty", "chump"),
+    first_guess: str,
     result: dict | None = None,
 ) -> dict | None:
     allowed, answers = _ensure_nyt_lists()
@@ -251,34 +289,34 @@ async def run_bot(
         _guesses_log: list[dict] = []
         _answer: str | None = None
 
-        for turn in range(6):
+        first_guess_l = (first_guess or "").strip().lower()
+
+        # Loop on actual game rows rather than attempt count so rejections don't waste turns.
+        max_attempts = 20
+        for attempt in range(max_attempts):
             await _dismiss_overlays(page)
             row_idx = await current_row_index(page, tile_sel)
             if row_idx >= 6:
                 break
 
-            # Play opening guesses in order, then fall through to adaptive solver.
-            opening_guess = None
-            for og in opening_guesses:
-                if og in guessed:
-                    continue
-                if og in allowed:
-                    opening_guess = og
-                break  # stop at first unplayed opening
-
-            guess = opening_guess or choose_best_guess_single_board(allowed, candidates, guessed=guessed)
+            if row_idx == 0 and first_guess_l and first_guess_l in allowed and first_guess_l not in guessed:
+                guess = first_guess_l
+            else:
+                guess = choose_best_guess_single_board(allowed, candidates, guessed=guessed)
             if guess in guessed:
                 guess = next(w for w in allowed if w not in guessed)
 
-            print(f"Turn {turn+1}/6: guessing {guess} (candidates={len(candidates)})")
+            print(f"Row {row_idx+1}/6: guessing {guess} (candidates={len(candidates)})")
             await submit_guess(page, guess)
 
-            ok, fb, err = await wait_for_evaluation_or_reject(page, tile_sel, row_idx, timeout_s=8.0)
+            ok, fb, err = await wait_for_evaluation_or_reject(page, tile_sel, row_idx)
             if not ok or fb is None:
-                print(f"  Guess rejected/failed: {err}. Removing '{guess}' and retrying.")
+                print(f"  Guess rejected: {err}. Skipping '{guess}' and retrying row {row_idx+1}.")
                 guessed.add(guess)
                 allowed = [w for w in allowed if w != guess]
+                candidates = [w for w in candidates if w != guess]
                 await clear_current_guess(page, 5)
+                await asyncio.sleep(0.3)
                 continue
 
             before = len(candidates)
@@ -320,8 +358,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help='Chrome profile directory name (e.g. "Default", "Profile 1"). Used with --user-data-dir.',
     )
-    ap.add_argument("--opening-guesses", type=str, default="arose,linty,chump",
-                    help="Comma-separated opening guess sequence (default: arose,linty,chump)")
+    ap.add_argument("--first-guess", type=str, default="AROSE", help="First guess to play (default: AROSE).")
     ap.add_argument("--dry-run", action="store_true", help="Only detect tiles, then exit.")
     ap.add_argument(
         "--user-data-dir",
@@ -334,6 +371,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
+    allowed, answers = _ensure_nyt_lists()
+    if not allowed or not answers:
+        raise RuntimeError("No word lists available.")
     asyncio.run(
         run_bot(
             headful=args.headful,
@@ -343,7 +383,7 @@ def main(argv: list[str] | None = None) -> None:
             channel=(args.channel.strip() if args.channel else None),
             profile_directory=args.profile_directory,
             dry_run=args.dry_run,
-            opening_guesses=tuple(g.strip().lower() for g in args.opening_guesses.split(",")),
+            first_guess=args.first_guess,
         )
     )
 
