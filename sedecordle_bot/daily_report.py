@@ -196,7 +196,7 @@ async def _run_sedecordle_async(opening_guesses: tuple[str, ...]) -> GameResult:
             url=ROOT_URL,
             dry_run=False,
             user_data_dir=None,
-            opening_guesses=opening_guesses,
+            first_guess=",".join(opening_guesses),
             result=raw,
         )
     except Exception as exc:
@@ -412,7 +412,10 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Report saved to: {report_path}")
         return
 
+    error_count = sum(1 for gr in results if gr.error)
     subject = f"Daily Puzzles — {date_str}"
+    if error_count:
+        subject += f" — ⚠ {error_count} error{'s' if error_count != 1 else ''}"
     try:
         send_gmail(html, subject, to_addr, from_addr, app_password)
         print(f"Email sent to {to_addr}")
