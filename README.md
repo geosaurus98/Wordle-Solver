@@ -11,34 +11,34 @@ py -m playwright install chromium
 
 ## Sedecordle (16 boards)
 
-Extract the word list (saved under `sedecordle_bot\data\`):
+Extract the word list (saved under `daily_puzzles\data\`):
 
 ```powershell
-py -m sedecordle_bot.extract_word_lists
+py -m daily_puzzles.extract_word_lists
 ```
 
 Run the bot (opens `AROSE` → `UNTIL`, then adaptive):
 
 ```powershell
-py -m sedecordle_bot.bot --headful
+py -m daily_puzzles.bot --headful
 ```
 
 Sedec-order mode (same bot, different URL):
 
 ```powershell
-py -m sedecordle_bot.bot --headful --url https://www.sedecordle.com/sedec-order
+py -m daily_puzzles.bot --headful --url https://www.sedecordle.com/sedec-order
 ```
 
 Savior mode (first 4 guesses pre-filled by the site — bot takes over from there):
 
 ```powershell
-py -m sedecordle_bot.savior_bot --headful
+py -m daily_puzzles.savior_bot --headful
 ```
 
 Persist state across runs (cookies/localStorage):
 
 ```powershell
-py -m sedecordle_bot.bot --headful --user-data-dir .\sedecordle_profile
+py -m daily_puzzles.bot --headful --user-data-dir .\sedecordle_profile
 ```
 
 ## NYT Wordle (1 board)
@@ -46,43 +46,43 @@ py -m sedecordle_bot.bot --headful --user-data-dir .\sedecordle_profile
 Run the bot — word lists are fetched automatically on first run and refreshed daily:
 
 ```powershell
-py -m sedecordle_bot.nyt_wordle_bot --headful
+py -m daily_puzzles.nyt_wordle_bot --headful
 ```
 
 To refresh word lists manually:
 
 ```powershell
-py -m sedecordle_bot.extract_nyt_word_lists
+py -m daily_puzzles.extract_nyt_word_lists
 ```
 
 Persist NYT state across runs (optional):
 
 ```powershell
-py -m sedecordle_bot.nyt_wordle_bot --headful --user-data-dir .\nyt_wordle_profile
+py -m daily_puzzles.nyt_wordle_bot --headful --user-data-dir .\nyt_wordle_profile
 ```
 
 ## Octordle (8 boards)
 
 ```powershell
-py -m sedecordle_bot.octordle_bot --headful
+py -m daily_puzzles.octordle_bot --headful
 ```
 
 Dry-run (detect boards only, no guesses):
 
 ```powershell
-py -m sedecordle_bot.octordle_bot --dry-run
+py -m daily_puzzles.octordle_bot --dry-run
 ```
 
 ## Waffle (5×5, 21 tiles)
 
 ```powershell
-py -m sedecordle_bot.waffle_bot --headful
+py -m daily_puzzles.waffle_bot --headful
 ```
 
 Dry-run (read tiles and solve internally, no interaction):
 
 ```powershell
-py -m sedecordle_bot.waffle_bot --dry-run
+py -m daily_puzzles.waffle_bot --dry-run
 ```
 
 ## NYT Sudoku (easy / medium / hard)
@@ -90,26 +90,26 @@ py -m sedecordle_bot.waffle_bot --dry-run
 Run the NYT Sudoku bot:
 
 ```powershell
-py -m sedecordle_bot.nyt_sudoku_bot --headful --difficulty easy
+py -m daily_puzzles.nyt_sudoku_bot --headful --difficulty easy
 ```
 
 Other difficulties:
 
 ```powershell
-py -m sedecordle_bot.nyt_sudoku_bot --headful --difficulty medium
-py -m sedecordle_bot.nyt_sudoku_bot --headful --difficulty hard
+py -m daily_puzzles.nyt_sudoku_bot --headful --difficulty medium
+py -m daily_puzzles.nyt_sudoku_bot --headful --difficulty hard
 ```
 
 Dry-run (read board + solve locally, do not type into page):
 
 ```powershell
-py -m sedecordle_bot.nyt_sudoku_bot --difficulty hard --dry-run
+py -m daily_puzzles.nyt_sudoku_bot --difficulty hard --dry-run
 ```
 
 Persistent browser profile (optional):
 
 ```powershell
-py -m sedecordle_bot.nyt_sudoku_bot --headful --difficulty medium --user-data-dir .\nyt_sudoku_profile
+py -m daily_puzzles.nyt_sudoku_bot --headful --difficulty medium --user-data-dir .\nyt_sudoku_profile
 ```
 
 ## Notes

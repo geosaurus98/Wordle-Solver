@@ -11,6 +11,6 @@ if exist "..\venv\Scripts\activate.bat" (
     call "venv\Scripts\activate.bat"
 )
 
-python -m sedecordle_bot.daily_report
+python -m daily_puzzles.daily_report
 
 exit /b %ERRORLEVEL%

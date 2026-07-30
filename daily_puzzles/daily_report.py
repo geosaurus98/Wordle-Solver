@@ -4,7 +4,7 @@ from __future__ import annotations
 daily_report.py — Runs all puzzle solvers and emails the results.
 
 Usage:
-    py -m sedecordle_bot.daily_report
+    py -m daily_puzzles.daily_report
 
 Environment variables required:
     GMAIL_APP_PASSWORD   — Gmail App Password (not your account password).
@@ -63,7 +63,7 @@ def _run_wordle(date_str: str, opening_guesses: tuple[str, ...]) -> GameResult:
     if not allowed:
         return GameResult(
             game="Wordle", url=url, date=date_str,
-            error=f"NYT word lists not found (answer={answer}). Run: py -m sedecordle_bot.extract_nyt_word_lists",
+            error=f"NYT word lists not found (answer={answer}). Run: py -m daily_puzzles.extract_nyt_word_lists",
         )
 
     board = simulate_single_board(answer, allowed, answers, max_turns=6, opening_guesses=opening_guesses)

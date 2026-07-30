@@ -21,7 +21,7 @@ def _assert_bindable(func, kwargs: dict) -> None:
 
 
 def test_dordle_run_bot_kwargs():
-    from sedecordle_bot.dordle_bot import run_bot, URL
+    from daily_puzzles.dordle_bot import run_bot, URL
     _assert_bindable(run_bot, dict(
         headful=False, slowmo_ms=0, url=URL, dry_run=False,
         user_data_dir=None, max_turns=7,
@@ -30,7 +30,7 @@ def test_dordle_run_bot_kwargs():
 
 
 def test_quordle_run_bot_kwargs():
-    from sedecordle_bot.quordle_bot import run_bot, URL
+    from daily_puzzles.quordle_bot import run_bot, URL
     _assert_bindable(run_bot, dict(
         headful=False, slowmo_ms=0, url=URL, dry_run=False,
         user_data_dir=None, max_turns=9,
@@ -39,7 +39,7 @@ def test_quordle_run_bot_kwargs():
 
 
 def test_octordle_run_bot_kwargs():
-    from sedecordle_bot.octordle_bot import run_bot, URL
+    from daily_puzzles.octordle_bot import run_bot, URL
     _assert_bindable(run_bot, dict(
         headful=False, slowmo_ms=0, url=URL, dry_run=False,
         user_data_dir=None, max_turns=13,
@@ -48,7 +48,7 @@ def test_octordle_run_bot_kwargs():
 
 
 def test_sedecordle_run_bot_kwargs():
-    from sedecordle_bot.bot import run_bot, ROOT_URL
+    from daily_puzzles.bot import run_bot, ROOT_URL
     _assert_bindable(run_bot, dict(
         headful=False, slowmo_ms=0, max_turns=21, url=ROOT_URL,
         dry_run=False, user_data_dir=None,
@@ -57,12 +57,12 @@ def test_sedecordle_run_bot_kwargs():
 
 
 def test_numberwaffle_run_bot_takes_no_args():
-    from sedecordle_bot.numberwaffle_bot import run_bot
+    from daily_puzzles.numberwaffle_bot import run_bot
     _assert_bindable(run_bot, {})
 
 
 def test_tilerdle_run_bot_takes_no_args():
-    from sedecordle_bot.tilerdle_bot import run_bot
+    from daily_puzzles.tilerdle_bot import run_bot
     _assert_bindable(run_bot, {})
 
 
@@ -72,7 +72,7 @@ def test_tilerdle_run_bot_takes_no_args():
 def test_multiboard_bots_share_opening_guesses_param(module_name):
     """These three bots are meant to have interchangeable run_bot() signatures."""
     import importlib
-    mod = importlib.import_module(f"sedecordle_bot.{module_name}")
+    mod = importlib.import_module(f"daily_puzzles.{module_name}")
     sig = inspect.signature(mod.run_bot)
     assert "opening_guesses" in sig.parameters
     assert "result" in sig.parameters

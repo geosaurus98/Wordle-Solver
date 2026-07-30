@@ -188,8 +188,8 @@ async def run_bot(
     if not words:
         raise RuntimeError(
             "No word list found. Run:\n"
-            "  py -m sedecordle_bot.extract_word_lists\n"
-            "  py -m sedecordle_bot.extract_nyt_word_lists"
+            "  py -m daily_puzzles.extract_word_lists\n"
+            "  py -m daily_puzzles.extract_nyt_word_lists"
         )
 
     async with async_playwright() as p:

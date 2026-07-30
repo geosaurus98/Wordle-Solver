@@ -267,7 +267,7 @@ async def run_bot(
     _ensure_word_lists_exist()
     allowed, answers = load_words()
     if not allowed or not answers:
-        raise RuntimeError("Word lists missing. Run: py -m sedecordle_bot.extract_word_lists")
+        raise RuntimeError("Word lists missing. Run: py -m daily_puzzles.extract_word_lists")
 
     async with async_playwright() as p:
         if user_data_dir:

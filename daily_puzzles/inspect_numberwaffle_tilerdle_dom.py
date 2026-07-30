@@ -14,7 +14,7 @@ from playwright.async_api import async_playwright
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-SCREENSHOTS_DIR = Path("C:/Users/George/Documents/GitHub/Solvers/debug_screenshots")
+SCREENSHOTS_DIR = Path(__file__).resolve().parent.parent / "debug_screenshots"
 SCREENSHOTS_DIR.mkdir(exist_ok=True)
 
 

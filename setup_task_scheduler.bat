@@ -29,7 +29,7 @@ if %ERRORLEVEL% EQU 0 (
     echo.
     echo   2. Test the script manually:
     echo      cd "%~dp0"
-    echo      python -m sedecordle_bot.daily_report --no-email --print-html
+    echo      python -m daily_puzzles.daily_report --no-email --print-html
     echo.
     echo   3. Once confirmed working, let the task run at 8:00 AM.
 ) else (
