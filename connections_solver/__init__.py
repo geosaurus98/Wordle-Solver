@@ -1,0 +1,3 @@
+"""
+NYT Connections solver package.
+"""
