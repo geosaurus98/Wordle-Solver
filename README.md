@@ -31,7 +31,7 @@ It features smart guessing algorithms, interactive feedback handling, and a **be
 ### **1. Clone this Repository**
 
 ```
-git clone https://github.com/your-username/Wordle-Solver.git
+git clone https://github.com/geosaurus98/Wordle-Solver.git
 cd Wordle-Solver
 ```
 
@@ -69,11 +69,7 @@ When running `wordle_main.py`, you'll be prompted to choose a mode:
 
 ## 🧪 Benchmarking
 
-You can run the test suite to benchmark opener sets and solver performance:
-
-```
-python test_suite.py
-```
+Run `python wordle_main.py` and choose **Test Solver on All Words** to benchmark opener sets and solver performance.
 
 This will:
 
@@ -87,27 +83,29 @@ This will:
 
 ```
 Wordle-Solver/
-│── wordle_main.py         # Main entry point
-│── constants.py           # Global constants (word length, feedback codes)
-│── loader.py              # Loads the word list
-│── interface.py           # Handles user input (game modes, openers)
-│── helpers.py             # Utility functions (scoring, top suggestions)
-│── filtering.py           # Feedback-based word filtering
-│── scoring.py             # Word scoring logic
-│── test_suite.py          # Benchmarking & analytics
-│── modes/
-│    ├── multi_solver.py   # Multi-word solver
-│    └── sequence_solver.py # Sequential solver
-└── wordle_words.csv       # Word list
+├── wordle_main.py             # Main entry point
+├── requirements.txt           # Python dependencies
+├── wordle_words.csv           # Word list
+└── wordle_solver/
+    ├── constants.py           # Global constants (word length, feedback codes)
+    ├── loader.py              # Loads the word list
+    ├── interface.py           # Handles user input (game modes, openers)
+    ├── helpers.py             # Utility functions (scoring, top suggestions)
+    ├── filtering.py           # Feedback-based word filtering
+    ├── scoring.py             # Word scoring logic
+    ├── test_suite.py          # Benchmarking & analytics
+    └── modes/
+        ├── multi_solver.py    # Multi-word solver
+        └── sequence_solver.py # Sequential solver
 ```
 
 ---
 ## 🛠 Changing Opening Suggestions
 
-Default opener sets are defined as **global variables** at the top of `interface.py`:
+Default opener sets are defined as **global variables** at the top of `wordle_solver/interface.py`:
 
 ```python
-# interface.py
+# wordle_solver/interface.py
 
 # === GLOBAL OPENER CONFIGURATION ===
 DEFAULT_OPENERS = [
@@ -119,7 +117,7 @@ DEFAULT_OPENERS = [
 
 ### **How to Change Them**
 
-1. Open `interface.py`.
+1. Open `wordle_solver/interface.py`.
 2. Modify `DEFAULT_OPENERS` to include your preferred starting words.
    For example:
 
@@ -140,9 +138,9 @@ You can still select **Option 4 (Rescue Mode)** at runtime to manually input cus
 
 ## 🔧 Configuration
 
-* **Word List**: Defined in `constants.py` as `WORD_LIST_PATH`.
-* **Openers**: Default openers (`AROSE`, `LINTY`, `CHUMP`) can be updated in `interface.py`.
-* **Feedback Options**: Feedback characters `g`, `y`, `b` are handled in `helpers.py`.
+* **Word List**: Defined in `wordle_solver/constants.py` as `WORD_LIST_PATH`.
+* **Openers**: Default openers (`AROSE`, `LINTY`, `CHUMP`) can be updated in `wordle_solver/interface.py`.
+* **Feedback Options**: Feedback characters `g`, `y`, `b` are handled in `wordle_solver/helpers.py`.
 
 ---
 
