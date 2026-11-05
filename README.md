@@ -136,6 +136,28 @@ You can still select **Option 4 (Rescue Mode)** at runtime to manually input cus
 
 ---
 
+## 🔗 Connections Solver
+
+A helper for the NYT **Connections** puzzle lives alongside the Wordle solver in `connections_solver/`.
+
+```
+python connections_main.py
+```
+
+1. Enter the 16 words (spaces, or commas if an entry has a space, e.g. `ICE CREAM`).
+2. Pick a suggestion by number, or type your own 4 words.
+3. Tell it what the game said: `c` = correct, `o` = one away, `w` = wrong.
+
+How it works:
+
+* **Wordplay detectors** find hidden words, anagrams, shared starts/endings, palindromes and common lists (colors, chess pieces, planets, Greek letters...). They can't understand meaning, so themed groups are left to you.
+* **Feedback tracking** removes any group your guesses have ruled out: a *wrong* guess means no group holds 3+ of those words, and *one away* means exactly one group holds 3 of them.
+* When 4 words remain, the last group is filled in automatically.
+
+Run the tests with `python -m unittest discover tests`.
+
+---
+
 ## 🔧 Configuration
 
 * **Word List**: Defined in `wordle_solver/constants.py` as `WORD_LIST_PATH`.
